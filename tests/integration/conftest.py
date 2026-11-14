@@ -21,6 +21,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+import zipfile
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -295,8 +296,17 @@ def server() -> Iterator[Server]:
     tv, ads = _write_library(run_dir / "media", www_url, with_archive)
     for f in (run_dir / "media" / "www").iterdir():
         shutil.move(str(f), run_dir / "www" / f.name)
+    # SM_IT_INSTALL_ZIP follows the manual install instructions (unzip into
+    # <data dir>/plugins/Saturday Morning_<version>/ before start).
     # SM_IT_MANIFEST_URL installs from a published manifest instead of a local build.
-    if not os.environ.get("SM_IT_MANIFEST_URL"):
+    manual_zip = os.environ.get("SM_IT_INSTALL_ZIP")
+    if manual_zip:
+        version = Path(manual_zip).stem.split("_", 1)[1]
+        target = run_dir / "data" / "plugins" / f"Saturday Morning_{version}"
+        target.mkdir(parents=True)
+        with zipfile.ZipFile(manual_zip) as archive:
+            archive.extractall(target)
+    elif not os.environ.get("SM_IT_MANIFEST_URL"):
         _package_plugin(run_dir / "www", www_url)
 
     proc = subprocess.Popen(
@@ -385,7 +395,10 @@ def server() -> Iterator[Server]:
             return True
 
         _wait(scanned, 300, "library scan", interval=3)
-        _install_plugin(srv)
+        if manual_zip:
+            _wait(lambda: _plugin_active(api), 120, "plugin active")
+        else:
+            _install_plugin(srv)
         yield srv
         if os.environ.get("SM_IT_HOLD") == "1":
             _hold(run_dir)
@@ -450,12 +463,10 @@ def _install_plugin(srv: Server) -> None:
     api.call("POST", "/System/Restart")
     time.sleep(5)
     srv.wait_up()
+    _wait(lambda: _plugin_active(api), 120, "plugin active")
 
-    def active() -> bool:
-        plugins = api.call("GET", "/Plugins")
-        return any(
-            p["Id"].replace("-", "") == PLUGIN_ID.replace("-", "") and p["Status"] == "Active"
-            for p in plugins
-        )
 
-    _wait(active, 120, "plugin active")
+def _plugin_active(api: Api) -> bool:
+    plugins = api.call("GET", "/Plugins")
+    want = PLUGIN_ID.replace("-", "")
+    return any(p["Id"].replace("-", "") == want and p["Status"] == "Active" for p in plugins)

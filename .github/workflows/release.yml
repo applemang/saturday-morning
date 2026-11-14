@@ -65,6 +65,9 @@ jobs:
             --manifest manifest.json
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add manifest.json
-          git commit -m "chore: publish ${VERSION} to the plugin manifest"
+          git rm -q --ignore-unmatch 'dist/saturday-morning_*'
+          mkdir -p dist
+          cp "$zip" "$zip.md5" "$zip.sha256" dist/
+          git add manifest.json dist
+          git commit -m "chore: publish ${VERSION} to the plugin manifest and dist/"
           git push origin main

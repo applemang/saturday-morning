@@ -24,15 +24,16 @@ The project has two parts:
 Requires **Jellyfin 12.1 or later** (`net10.0`, `targetAbi 12.1.0.0`). It does not
 load on 10.x.
 
-## Install the plugin
+## Install
 
-1. Dashboard > Plugins > Repositories > add
-   `https://raw.githubusercontent.com/applemang/saturday-morning/main/manifest.json`.
-2. Catalog > Saturday Morning > Install, then restart Jellyfin.
+**See [INSTALL.md](INSTALL.md)** for the full walkthrough: plugin install
+(from the repository manifest or manually from the zip), building the
+commercials library, configuration and troubleshooting.
 
-The same works over the API with an admin key (`GET /Repositories`, append,
-`POST /Repositories`, then `POST /Packages/Installed/Saturday%20Morning`). See
-`docs/jellyfin-12-api-notes.md`.
+- Repository manifest:
+  `https://raw.githubusercontent.com/applemang/saturday-morning/main/manifest.json`
+- Prebuilt plugin: [`dist/`](dist/) (zip + md5 + sha256), also attached to each
+  [GitHub release](https://github.com/applemang/saturday-morning/releases).
 
 ## Configure
 
@@ -158,13 +159,15 @@ resolve to remote HTTP streams, including two public-domain archive.org clips
 
 ```
 mkdir -p .integration && cd .integration
+# ARM64 shown; use amd64 / linux64 builds on x86-64
 curl -fLO https://repo.jellyfin.org/files/server/linux/stable/v12.1/arm64/jellyfin_12.1-arm64.tar.xz
 curl -fLO https://repo.jellyfin.org/files/ffmpeg/linux/latest-7.x/arm64/jellyfin-ffmpeg_7.1.4-3_portable_linuxarm64-gpl.tar.xz
 tar xJf jellyfin_12.1-arm64.tar.xz && mkdir ffmpeg && tar xJf jellyfin-ffmpeg_*.tar.xz -C ffmpeg
 ```
 
 `SM_IT_MANIFEST_URL=<manifest url> make integration` installs from a published
-manifest instead of a local build.
+manifest instead of a local build; `SM_IT_INSTALL_ZIP=<path to zip> make integration`
+follows the manual install steps in INSTALL.md.
 `SM_IT_PASSWORD=<pick one> make demo` keeps that server running after the
 tests so you can play the playlist in Jellyfin Web (tunnel port 18096).
 
@@ -172,8 +175,8 @@ tests so you can play the playlist in Jellyfin Web (tunnel port 18096).
 
 Bump `<Version>` in `Directory.Build.props`, commit to `main`, then push an
 annotated tag `v<version>` whose message is the changelog. The release workflow
-verifies, packages, publishes the GitHub release (zip, md5, sha256) and adds
-the version to `manifest.json` on `main`.
+verifies, packages, publishes the GitHub release (zip, md5, sha256), copies
+the build into `dist/` and adds the version to `manifest.json` on `main`.
 
 ## Licence
 
