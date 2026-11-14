@@ -160,6 +160,26 @@ Saturday Morning: commercials sync written=37 unchanged=0 removed=0 folder=/comm
 Saturday Morning: episodes=8 series=8 commercials=18 skipped_missing_date=2 playlist=... created=False
 ```
 
+## Watching it
+
+The result is an ordinary Jellyfin playlist, so any Jellyfin client can play
+it: Jellyfin Web, the phone and TV apps, or casting from them.
+
+1. Sign in as the **playlist owner**. The playlist is private to that user,
+   so other accounts don't see it.
+2. Open **Playlists** (on the home screen, or in the side menu under your
+   libraries) and pick **Saturday Morning**.
+3. Press **Play**. Don't press **Shuffle**: the plugin has already shuffled
+   the episodes, and shuffling again would scatter the commercial breaks.
+
+The playlist then plays straight through, with each episode followed by its
+commercial break. Episodes come from your server as usual; commercials stream
+from archive.org, so the playing device needs internet access.
+
+A new line-up is built every Saturday at 06:00. If you start watching before
+then, you get last week's. If you stop partway, open the playlist and press
+Play on the item you stopped at to carry on from there.
+
 ## Changing things later
 
 - **Commercials:** add, edit or remove rows on the settings page, save, and
