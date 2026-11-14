@@ -2,6 +2,14 @@
   {
     "versions": [
       {
+        "version": "1.1.0.0",
+        "changelog": "Everything is configured in the Jellyfin UI: series picker, Internet Archive commercials managed on the settings page and synced by a new scheduled task (replaces the Python builder), and run-now buttons.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/applemang/saturday-morning/releases/download/v1.1.0.0/saturday-morning_1.1.0.0.zip",
+        "checksum": "34b921afb9296401e165edfbde1ee6a1",
+        "timestamp": "2026-11-14T10:29:25Z"
+      },
+      {
         "version": "1.0.0.0",
         "changelog": "First release: weekly Saturday Morning playlist with archive.org commercials (Jellyfin 12.1+).",
         "targetAbi": "12.1.0.0",
