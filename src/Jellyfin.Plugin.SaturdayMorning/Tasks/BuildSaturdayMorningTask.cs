@@ -8,6 +8,8 @@ using Jellyfin.Plugin.SaturdayMorning.Configuration;
 using Jellyfin.Plugin.SaturdayMorning.Selection;
 using MediaBrowser.Controller.Library;
 using MediaBrowser.Controller.Playlists;
+using MediaBrowser.Controller.Providers;
+using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
 
@@ -21,6 +23,8 @@ public sealed partial class BuildSaturdayMorningTask : IScheduledTask
     private readonly ILibraryManager _libraryManager;
     private readonly IPlaylistManager _playlistManager;
     private readonly IUserManager _userManager;
+    private readonly IProviderManager _providerManager;
+    private readonly IFileSystem _fileSystem;
     private readonly ILogger<BuildSaturdayMorningTask> _logger;
 
     /// <summary>
@@ -29,16 +33,22 @@ public sealed partial class BuildSaturdayMorningTask : IScheduledTask
     /// <param name="libraryManager">Library manager.</param>
     /// <param name="playlistManager">Playlist manager.</param>
     /// <param name="userManager">User manager.</param>
+    /// <param name="providerManager">Provider manager.</param>
+    /// <param name="fileSystem">File system.</param>
     /// <param name="logger">Logger.</param>
     public BuildSaturdayMorningTask(
         ILibraryManager libraryManager,
         IPlaylistManager playlistManager,
         IUserManager userManager,
+        IProviderManager providerManager,
+        IFileSystem fileSystem,
         ILogger<BuildSaturdayMorningTask> logger)
     {
         _libraryManager = libraryManager;
         _playlistManager = playlistManager;
         _userManager = userManager;
+        _providerManager = providerManager;
+        _fileSystem = fileSystem;
         _logger = logger;
     }
 
@@ -89,7 +99,11 @@ public sealed partial class BuildSaturdayMorningTask : IScheduledTask
                 "Saturday Morning libraries not found (" + string.Join(", ", missing) + "); the playlist was left untouched.");
         }
 
-        progress.Report(5);
+        // Pick up commercials a sync wrote but Jellyfin has not scanned yet.
+        await new LibraryScanner(_libraryManager, _fileSystem)
+            .ScanAsync(config.CommercialsLibraryId, new Progress<double>(p => progress.Report(p / 5)), cancellationToken)
+            .ConfigureAwait(false);
+        progress.Report(20);
         var episodes = source.GetEpisodes(config.SourceLibraryIds);
         var commercials = source.GetCommercials(config.CommercialsLibraryId);
         cancellationToken.ThrowIfCancellationRequested();
@@ -113,9 +127,9 @@ public sealed partial class BuildSaturdayMorningTask : IScheduledTask
         cancellationToken.ThrowIfCancellationRequested();
         progress.Report(60);
 
-        var writer = new PlaylistWriter(_playlistManager);
+        var writer = new PlaylistWriter(_playlistManager, _libraryManager, _userManager, _providerManager, _fileSystem);
         var (playlistId, created) = await writer
-            .ReplaceAsync(config.OwnerUserId, config.PlaylistName, plan.Items.Select(i => i.Id).ToList())
+            .ReplaceAsync(config.OwnerUserId, config.PlaylistName, plan.Items.Select(i => i.Id).ToList(), cancellationToken)
             .ConfigureAwait(false);
 
         progress.Report(100);

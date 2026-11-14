@@ -4,11 +4,11 @@ using System.Linq;
 using System.Net.Http;
 using System.Threading;
 using System.Threading.Tasks;
+using Jellyfin.Plugin.SaturdayMorning.Adapter;
 using Jellyfin.Plugin.SaturdayMorning.Commercials;
 using Jellyfin.Plugin.SaturdayMorning.Configuration;
 using MediaBrowser.Common.Net;
 using MediaBrowser.Controller.Library;
-using MediaBrowser.Controller.Providers;
 using MediaBrowser.Model.IO;
 using MediaBrowser.Model.Tasks;
 using Microsoft.Extensions.Logging;
@@ -24,7 +24,6 @@ public sealed partial class SyncCommercialsTask : IScheduledTask
     private const string UserAgent = "Jellyfin-SaturdayMorning/1.0 (+https://github.com/applemang/saturday-morning)";
 
     private readonly ILibraryManager _libraryManager;
-    private readonly IProviderManager _providerManager;
     private readonly IFileSystem _fileSystem;
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<SyncCommercialsTask> _logger;
@@ -33,19 +32,16 @@ public sealed partial class SyncCommercialsTask : IScheduledTask
     /// Initializes a new instance of the <see cref="SyncCommercialsTask"/> class.
     /// </summary>
     /// <param name="libraryManager">Library manager.</param>
-    /// <param name="providerManager">Provider manager (library refresh).</param>
     /// <param name="fileSystem">File system.</param>
     /// <param name="httpClientFactory">HTTP client factory.</param>
     /// <param name="logger">Logger.</param>
     public SyncCommercialsTask(
         ILibraryManager libraryManager,
-        IProviderManager providerManager,
         IFileSystem fileSystem,
         IHttpClientFactory httpClientFactory,
         ILogger<SyncCommercialsTask> logger)
     {
         _libraryManager = libraryManager;
-        _providerManager = providerManager;
         _fileSystem = fileSystem;
         _httpClientFactory = httpClientFactory;
         _logger = logger;
@@ -58,7 +54,7 @@ public sealed partial class SyncCommercialsTask : IScheduledTask
     public string Key => "SaturdayMorningSyncCommercials";
 
     /// <inheritdoc />
-    public string Description => "Writes a .strm file for each video of the Internet Archive items listed in the Saturday Morning settings, then rescans the commercials library.";
+    public string Description => "Writes a .strm file for each video of the Internet Archive items listed in the Saturday Morning settings, then scans the commercials library.";
 
     /// <inheritdoc />
     public string Category => "Saturday Morning";
@@ -118,20 +114,15 @@ public sealed partial class SyncCommercialsTask : IScheduledTask
             LogSource(_logger, source.Identifier, source.Videos);
         }
 
-        if (report.Written + report.Removed > 0)
-        {
-            _providerManager.QueueRefresh(
-                validation.CommercialsLibraryId,
-                new MetadataRefreshOptions(new DirectoryService(_fileSystem))
-                {
-                    MetadataRefreshMode = MetadataRefreshMode.Default,
-                    ImageRefreshMode = MetadataRefreshMode.Default,
-                },
-                RefreshPriority.High);
-        }
-
-        progress.Report(100);
         LogSummary(_logger, report.Written, report.Unchanged, report.Removed, folder);
+
+        // Scan every time, not only after changes: it also recovers a scan that never ran.
+        await new LibraryScanner(_libraryManager, _fileSystem)
+            .ScanAsync(validation.CommercialsLibraryId, new Progress<double>(p => progress.Report(80 + (p / 5))), cancellationToken)
+            .ConfigureAwait(false);
+        var items = new JellyfinLibrarySource(_libraryManager).GetCommercials(validation.CommercialsLibraryId).Count;
+        LogScanned(_logger, items);
+        progress.Report(100);
     }
 
     private string ResolveFolder(Guid libraryId)
@@ -153,4 +144,7 @@ public sealed partial class SyncCommercialsTask : IScheduledTask
 
     [LoggerMessage(Level = LogLevel.Information, Message = "Saturday Morning: commercials sync written={Written} unchanged={Unchanged} removed={Removed} folder={Folder}")]
     private static partial void LogSummary(ILogger logger, int written, int unchanged, int removed, string folder);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Saturday Morning: commercials library scanned items={Items}")]
+    private static partial void LogScanned(ILogger logger, int items);
 }

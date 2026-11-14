@@ -57,7 +57,7 @@ Pick either A or B.
    | Windows | `C:\ProgramData\Jellyfin\Server\plugins` |
 
 4. Create a folder named `Saturday Morning_<version>` (for example
-   `Saturday Morning_1.1.0.0`) inside the plugins folder and extract the zip
+   `Saturday Morning_1.1.1.0`) inside the plugins folder and extract the zip
    into it. It should contain exactly `Jellyfin.Plugin.SaturdayMorning.dll`
    and `meta.json`. Make sure the Jellyfin user can read the files.
 5. Restart Jellyfin.
@@ -109,7 +109,7 @@ Settings).
 |---|---|
 | Source libraries | Tick your cartoon / TV libraries |
 | Every series in these libraries | Leave on to include every show (new shows join automatically), or untick it to get a checklist of the series in the ticked libraries. The list has a search box and "tick / untick all shown" buttons. |
-| Air date from / to | For example 1984-01-01 to 1989-12-31 (inclusive) |
+| Episodes aired from / to | For example 1984-01-01 to 1989-12-31 (inclusive). This filters episodes only; to change the era of the commercials, change the Internet Archive items. |
 | When an episode has no premiere date | Exclude it, or use the series premiere year |
 | One episode per series per run | On for the classic block feel |
 | Maximum episodes per run | 0 for no limit, or e.g. 8 for a morning-sized block |
@@ -142,8 +142,8 @@ Click **Save**.
 At the bottom of the settings page:
 
 1. **Sync commercials now** fetches the item listings from archive.org, writes
-   the `.strm` files and rescans the commercials library. Give the scan a
-   minute, then check that the library has items.
+   the `.strm` files and scans the commercials library. When the task shows
+   Completed, the library is up to date; no manual scan is needed.
 2. **Build playlist now** builds the playlist. Open it as the owner user and
    press play.
 
@@ -157,6 +157,7 @@ The server log gets one line per run, for example:
 
 ```
 Saturday Morning: commercials sync written=37 unchanged=0 removed=0 folder=/commercials
+Saturday Morning: commercials library scanned items=37
 Saturday Morning: episodes=8 series=8 commercials=18 skipped_missing_date=2 playlist=... created=False
 ```
 
@@ -202,7 +203,8 @@ delete them.
 |---|---|
 | Build fails: "not configured" | A required setting is empty. The message lists each one. |
 | Build fails: "No episodes in the selected series aired between" | Nothing in the chosen series has an air date in range. Check the range, the series checklist, or use the series-year fallback. |
-| Build fails: "commercials library returned no items" | Run the sync first and let the scan finish, or check that the library folder isn't under a hidden (`.`) directory. |
+| Build fails: "commercials library returned no items" | Run the sync first, and check that the library folder isn't under a hidden (`.`) directory. On 1.1.0.0, also run Dashboard > Scheduled Tasks > **Scan Media Library** after a sync (1.1.1.0 and later scan the library themselves). |
+| Log error: "playlist.xml ... being used by another process" | Harmless; the playlist was still written. It came from Jellyfin saving the playlist twice at once and is fixed in 1.1.1.0. |
 | Sync fails: "Commercials are not configured" | Choose the commercials library and add at least one Internet Archive item. |
 | Sync fails: "not found (no files listed)" | The identifier is wrong. Copy it from the item's archive.org address. |
 | Sync fails: "has no matching video files" | Your include/exclude patterns removed every video of that item. |

@@ -41,7 +41,7 @@ Dashboard > Plugins > Saturday Morning:
 |---|---|---|
 | Source libraries | none (required) | Episodes come only from these |
 | Every series in these libraries | on | Untick for a searchable checklist of the libraries' series |
-| Air date from / to | none (required) | Inclusive |
+| Episodes aired from / to | none (required) | Inclusive. Episodes only: commercials are chosen by the Internet Archive items |
 | When an episode has no premiere date | Exclude | Or "use the series premiere year": kept when that year is within the range's years |
 | One episode per series per run | on | Picked uniformly at random |
 | Maximum episodes per run | 0 | 0 = no cap; applied after shuffling |
@@ -57,8 +57,8 @@ startable from the settings page):
 
 | Task | Default schedule | What it does |
 |---|---|---|
-| Sync commercials from the Internet Archive | Saturday 05:00 | Reads each item from `https://archive.org/metadata/<identifier>` and picks one file per source video, preferring MP4/h.264. Writes one `.strm` per video into the commercials library's folder, deletes `.strm` files for items you removed, and rescans that library. It touches nothing else in the folder, and changes nothing if any request fails. |
-| Build Saturday Morning playlist | Saturday 06:00 | Builds the playlist from the rules above |
+| Sync commercials from the Internet Archive | Saturday 05:00 | Reads each item from `https://archive.org/metadata/<identifier>` and picks one file per source video, preferring MP4/h.264. Writes one `.strm` per video into the commercials library's folder, deletes `.strm` files for items you removed, then scans that library and waits for the scan to finish. It touches nothing else in the folder, and changes nothing if any request fails. |
+| Build Saturday Morning playlist | Saturday 06:00 | Scans the commercials library, then builds the playlist from the rules above |
 
 Each `.strm` file holds exactly one line,
 `https://archive.org/download/<identifier>/<url-encoded file name>`. File

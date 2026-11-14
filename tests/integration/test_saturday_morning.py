@@ -19,7 +19,6 @@ from conftest import (
     ROOT,
     SERIES,
     Server,
-    _wait,
 )
 
 TASK_KEY = "SaturdayMorningBuildPlaylist"
@@ -99,6 +98,22 @@ def _ads_pool(srv: Server) -> int:
     return LOCAL_ADS
 
 
+def _library_files(srv: Server) -> list[str]:
+    ads = srv.api.call(
+        "GET",
+        "/Items",
+        query={
+            "ParentId": srv.ads_library_id,
+            "Recursive": "true",
+            "IsFolder": "false",
+            "MediaTypes": "Video",
+            "userId": srv.api.user_id,
+            "Fields": "Path",
+        },
+    )["Items"]
+    return sorted(a["Path"].rsplit("/", 1)[1] for a in ads)
+
+
 def test_plugin_installed_from_catalog_with_default_trigger(server: Server) -> None:
     plugins = server.api.call("GET", "/Plugins")
     ours = [p for p in plugins if p["Id"].replace("-", "") == PLUGIN_ID.replace("-", "")]
@@ -163,6 +178,8 @@ def test_rerun_replaces_contents_of_the_same_playlist(server: Server) -> None:
         _check_shape(items, 2, 3, _ads_pool(server))
         orders.add(tuple(i["Id"] for i in items))
     assert len(orders) > 1, "three runs produced identical playlists; shuffle not applied"
+    # Jellyfin's own UpdatePlaylist saves playlist.xml twice at once; the plugin must not.
+    assert "being used by another process" not in server.log_text()
 
 
 def test_failed_run_leaves_existing_playlist_untouched(server: Server) -> None:
@@ -261,22 +278,9 @@ def test_sync_task_fills_the_commercials_library_from_archive_org(server: Server
     )
     assert "commercials sync written=2 unchanged=0 removed=5" in server.log_text()
 
-    def rescanned() -> bool:
-        ads = server.api.call(
-            "GET",
-            "/Items",
-            query={
-                "ParentId": server.ads_library_id,
-                "Recursive": "true",
-                "IsFolder": "false",
-                "MediaTypes": "Video",
-                "userId": server.api.user_id,
-                "Fields": "Path",
-            },
-        )["Items"]
-        return sorted(a["Path"].rsplit("/", 1)[1] for a in ads) == ARCHIVE_STRM
-
-    _wait(rescanned, 180, "commercials library rescan", interval=3)
+    # The task scans the commercials library itself: no waiting, no manual scan.
+    assert _library_files(server) == ARCHIVE_STRM
+    assert "Saturday Morning: commercials library scanned items=2" in server.log_text()
 
     assert server.run_task(SYNC_KEY)["Status"] == "Completed"
     assert "commercials sync written=0 unchanged=2 removed=0" in server.log_text()
@@ -301,3 +305,60 @@ def test_sync_task_fills_the_commercials_library_from_archive_org(server: Server
     with urllib.request.urlopen(req, timeout=60) as resp:
         assert resp.status in (200, 206)
         assert b"ftyp" in resp.read(64)
+
+
+def test_sync_follows_a_commercials_library_moved_to_a_new_folder(server: Server) -> None:
+    """The owner's case: library folder changed, no full scan since, then a sync."""
+    if not server.with_archive:
+        return
+    old = server.extra_paths["commercials"]
+    new = old.parent / "commercials-moved"
+    new.mkdir()
+    name = next(
+        f["Name"]
+        for f in server.api.call("GET", "/Library/VirtualFolders")
+        if f["ItemId"] == server.ads_library_id
+    )
+    server.api.call(
+        "POST",
+        "/Library/VirtualFolders/Paths",
+        query={"refreshLibrary": "false"},
+        body={"Name": name, "PathInfo": {"Path": str(new)}},
+    )
+    server.api.call(
+        "DELETE",
+        "/Library/VirtualFolders/Paths",
+        query={"name": name, "path": str(old), "refreshLibrary": "false"},
+    )
+    server.extra_paths["commercials"] = new
+
+    assert server.run_task(SYNC_KEY, timeout=300)["Status"] == "Completed"
+
+    assert sorted(p.name for p in new.iterdir()) == sorted(ARCHIVE_STRM)
+    assert _library_files(server) == ARCHIVE_STRM
+    paths = server.api.call(
+        "GET",
+        "/Items",
+        query={
+            "ParentId": server.ads_library_id,
+            "Recursive": "true",
+            "IsFolder": "false",
+            "MediaTypes": "Video",
+            "userId": server.api.user_id,
+            "Fields": "Path",
+        },
+    )["Items"]
+    assert all(i["Path"].startswith(str(new)) for i in paths), paths
+
+
+def test_build_rescans_the_commercials_library_first(server: Server) -> None:
+    # A .strm file Jellyfin has not scanned yet (as when a sync's rescan never ran).
+    folder = server.extra_paths["commercials"]
+    extra = folder / "zz late arrival.strm"
+    extra.write_text(f"{server.www_url}/ad1.mp4\n")
+    assert "zz late arrival.strm" not in _library_files(server)
+    _configure(server, CommercialsMin=1, CommercialsMax=1)
+
+    assert server.run_task(TASK_KEY)["Status"] == "Completed"
+
+    assert "zz late arrival.strm" in _library_files(server)
