@@ -2,6 +2,14 @@
   {
     "versions": [
       {
+        "version": "1.1.1.0",
+        "changelog": "Saturday Morning 1.1.1.0\n\n- Sync commercials now scans the commercials library itself and waits for it,\n  so new commercials are in the library when the task completes. No manual\n  \"Scan Media Library\" is needed, including after moving the library's folder.\n- Build playlist scans the commercials library before choosing commercials.\n- Rebuilding the playlist no longer logs \"playlist.xml ... being used by\n  another process\".\n- The settings page labels the date range as applying to episodes only.",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/applemang/saturday-morning/releases/download/v1.1.1.0/saturday-morning_1.1.1.0.zip",
+        "checksum": "f3d335e3edf4334d6081f27ce9d47d17",
+        "timestamp": "2026-11-14T15:07:06Z"
+      },
+      {
         "version": "1.1.0.0",
         "changelog": "Everything is configured in the Jellyfin UI: series picker, Internet Archive commercials managed on the settings page and synced by a new scheduled task (replaces the Python builder), and run-now buttons.",
         "targetAbi": "12.1.0.0",
