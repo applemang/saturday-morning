@@ -12,14 +12,24 @@ from typing import Any
 from conftest import (
     AIR_FROM,
     AIR_TO,
-    ARCHIVE_ADS,
+    ARCHIVE_SOURCE,
+    ARCHIVE_STRM,
+    LOCAL_ADS,
     PLUGIN_ID,
+    ROOT,
     SERIES,
     Server,
+    _wait,
 )
 
 TASK_KEY = "SaturdayMorningBuildPlaylist"
+SYNC_KEY = "SaturdayMorningSyncCommercials"
 PLAYLIST = "Saturday Morning"
+
+
+def _version() -> str:
+    props = (ROOT / "Directory.Build.props").read_text()
+    return props.split("<Version>", 1)[1].split("</Version>", 1)[0]
 
 
 def _configure(srv: Server, **overrides: Any) -> None:
@@ -86,20 +96,23 @@ def _check_shape(items: list[dict[str, Any]], lo: int, hi: int, ads_pool: int) -
 
 
 def _ads_pool(srv: Server) -> int:
-    from conftest import LOCAL_ADS
-
-    return LOCAL_ADS + (len(ARCHIVE_ADS) if srv.with_archive else 0)
+    return LOCAL_ADS
 
 
 def test_plugin_installed_from_catalog_with_default_trigger(server: Server) -> None:
     plugins = server.api.call("GET", "/Plugins")
     ours = [p for p in plugins if p["Id"].replace("-", "") == PLUGIN_ID.replace("-", "")]
-    assert ours and ours[0]["Status"] == "Active" and ours[0]["Version"] == "1.0.0.0"
+    assert ours and ours[0]["Status"] == "Active" and ours[0]["Version"] == _version()
 
-    task = next(t for t in server.api.call("GET", "/ScheduledTasks") if t["Key"] == TASK_KEY)
-    assert task["Name"] == "Build Saturday Morning playlist"
-    assert task["Triggers"] == [
+    tasks = {t["Key"]: t for t in server.api.call("GET", "/ScheduledTasks")}
+    build, sync = tasks[TASK_KEY], tasks[SYNC_KEY]
+    assert build["Name"] == "Build Saturday Morning playlist"
+    assert build["Triggers"] == [
         {"Type": "WeeklyTrigger", "TimeOfDayTicks": 6 * 3600 * 10**7, "DayOfWeek": "Saturday"}
+    ]
+    assert sync["Name"] == "Sync commercials from the Internet Archive"
+    assert sync["Triggers"] == [
+        {"Type": "WeeklyTrigger", "TimeOfDayTicks": 5 * 3600 * 10**7, "DayOfWeek": "Saturday"}
     ]
 
 
@@ -109,6 +122,17 @@ def test_unconfigured_run_fails_and_creates_nothing(server: Server) -> None:
     assert result["Status"] == "Failed"
     assert "not configured" in result["ErrorMessage"]
     assert _playlists(server) == []
+
+
+def test_unconfigured_sync_fails_and_leaves_folder_alone(server: Server) -> None:
+    folder = server.extra_paths["commercials"]
+    before = sorted(p.name for p in folder.iterdir())
+
+    result = server.run_task(SYNC_KEY)
+
+    assert result["Status"] == "Failed"
+    assert "not configured" in result["ErrorMessage"]
+    assert sorted(p.name for p in folder.iterdir()) == before
 
 
 def test_run_builds_playlist_following_every_rule(server: Server) -> None:
@@ -167,6 +191,29 @@ def test_series_year_fallback_all_episodes_and_cap(server: Server) -> None:
     assert [i["Type"] == "Episode" for i in items] == [True, False, True]
 
 
+def test_series_picker_limits_the_rotation(server: Server) -> None:
+    series = server.api.call(
+        "GET",
+        "/Items",
+        query={
+            "ParentId": server.tv_library_id,
+            "IncludeItemTypes": "Series",
+            "Recursive": "true",
+            "userId": server.api.user_id,
+        },
+    )["Items"]
+    chosen = {s["Name"]: s["Id"] for s in series if s["Name"] in ("Laser Cats", "Space Cadets")}
+    _configure(server, AllSeries=False, SelectedSeriesIds=list(chosen.values()), OnePerSeries=False)
+
+    assert server.run_task(TASK_KEY)["Status"] == "Completed"
+
+    items = _items(server, _playlists(server)[0]["Id"])
+    episodes = [i for i in items if i["Type"] == "Episode"]
+    # Space Cadets is picked but never aired in range, so only Laser Cats remains.
+    assert {e["SeriesName"] for e in episodes} == {"Laser Cats"}
+    assert len(episodes) == 3
+
+
 def test_commercials_are_remote_strm_items_that_stream(server: Server) -> None:
     _configure(server, CommercialsMin=3, CommercialsMax=3)
     assert server.run_task(TASK_KEY)["Status"] == "Completed"
@@ -196,38 +243,60 @@ def test_commercials_are_remote_strm_items_that_stream(server: Server) -> None:
     assert status in (200, 206) and b"ftyp" in body[:64]
 
 
-def test_archive_org_strm_resolves_to_a_playable_remote_stream(server: Server) -> None:
+def test_sync_task_fills_the_commercials_library_from_archive_org(server: Server) -> None:
     if not server.with_archive:
         return
-    ads = server.api.call(
-        "GET",
-        "/Items",
-        query={
-            "ParentId": server.ads_library_id,
-            "Recursive": "true",
-            "IsFolder": "false",
-            "MediaTypes": "Video",
-            "userId": server.api.user_id,
-            "Fields": "Path",
-        },
-    )["Items"]
-    remote = []
-    for ad in ads:
-        assert ad["Path"].endswith(".strm")
+    folder = server.extra_paths["commercials"]
+    (folder / "notes.txt").write_text("not a commercial")
+    _configure(server, CommercialSources=[ARCHIVE_SOURCE], CommercialsMin=1, CommercialsMax=1)
+
+    result = server.run_task(SYNC_KEY, timeout=300)
+
+    assert result["Status"] == "Completed", result
+    # The local test .strm files are replaced by exactly the configured archive videos;
+    # other files are left alone.
+    assert sorted(p.name for p in folder.iterdir()) == sorted([*ARCHIVE_STRM, "notes.txt"])
+    assert (folder / ARCHIVE_STRM[0]).read_text() == (
+        "https://archive.org/download/ctvc/ctvc_BAYER_512kb.mp4\n"
+    )
+    assert "commercials sync written=2 unchanged=0 removed=5" in server.log_text()
+
+    def rescanned() -> bool:
+        ads = server.api.call(
+            "GET",
+            "/Items",
+            query={
+                "ParentId": server.ads_library_id,
+                "Recursive": "true",
+                "IsFolder": "false",
+                "MediaTypes": "Video",
+                "userId": server.api.user_id,
+                "Fields": "Path",
+            },
+        )["Items"]
+        return sorted(a["Path"].rsplit("/", 1)[1] for a in ads) == ARCHIVE_STRM
+
+    _wait(rescanned, 180, "commercials library rescan", interval=3)
+
+    assert server.run_task(SYNC_KEY)["Status"] == "Completed"
+    assert "commercials sync written=0 unchanged=2 removed=0" in server.log_text()
+
+    assert server.run_task(TASK_KEY)["Status"] == "Completed"
+    items = _items(server, _playlists(server)[0]["Id"])
+    urls = []
+    for ad in (i for i in items if i["Type"] != "Episode"):
         info = server.api.call(
             "POST",
             f"/Items/{ad['Id']}/PlaybackInfo",
             query={"userId": server.api.user_id},
             body={},
         )
-        url = info["MediaSources"][0]["Path"]
-        if url.startswith("https://archive.org/download/"):
-            remote.append(url)
-    assert sorted(remote) == sorted(ARCHIVE_ADS)
+        urls.append(info["MediaSources"][0]["Path"])
+    assert urls and all(u.startswith("https://archive.org/download/ctvc/") for u in urls)
 
     # What a client does with that source: fetch it straight from archive.org.
     req = urllib.request.Request(
-        remote[0], headers={"Range": "bytes=0-4095", "User-Agent": "sm-it/1.0"}
+        urls[0], headers={"Range": "bytes=0-4095", "User-Agent": "sm-it/1.0"}
     )
     with urllib.request.urlopen(req, timeout=60) as resp:
         assert resp.status in (200, 206)

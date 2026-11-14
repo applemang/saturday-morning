@@ -14,6 +14,13 @@ public class PluginConfiguration : BasePluginConfiguration
     [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "XML serialisation of plugin configuration needs an array.")]
     public string[] SourceLibraryIds { get; set; } = [];
 
+    /// <summary>Gets or sets a value indicating whether every series in the source libraries is in the rotation.</summary>
+    public bool AllSeries { get; set; } = true;
+
+    /// <summary>Gets or sets the series in the rotation when <see cref="AllSeries"/> is off.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "XML serialisation of plugin configuration needs an array.")]
+    public string[] SelectedSeriesIds { get; set; } = [];
+
     /// <summary>Gets or sets the first air date to include (yyyy-MM-dd).</summary>
     public string AirDateFrom { get; set; } = string.Empty;
 
@@ -31,6 +38,10 @@ public class PluginConfiguration : BasePluginConfiguration
 
     /// <summary>Gets or sets the id of the commercials library.</summary>
     public string CommercialsLibraryId { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the Internet Archive items the commercials sync task turns into .strm files.</summary>
+    [System.Diagnostics.CodeAnalysis.SuppressMessage("Performance", "CA1819:Properties should not return arrays", Justification = "XML serialisation of plugin configuration needs an array.")]
+    public CommercialSource[] CommercialSources { get; set; } = [];
 
     /// <summary>Gets or sets the minimum commercials between episodes.</summary>
     public int CommercialsMin { get; set; } = 2;

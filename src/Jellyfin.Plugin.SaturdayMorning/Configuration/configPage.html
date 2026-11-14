@@ -12,11 +12,31 @@
                     <div class="sectionTitleContainer flex align-items-center">
                         <h2 class="sectionTitle">Saturday Morning</h2>
                     </div>
-                    <p>The playlist is rebuilt by the scheduled task "Build Saturday Morning playlist". Change its schedule under Dashboard &gt; Scheduled Tasks.</p>
+                    <p>Two scheduled tasks do the work: "Sync commercials from the Internet Archive" and "Build Saturday Morning playlist". Change their schedules under Dashboard &gt; Scheduled Tasks, or use the buttons at the bottom of this page.</p>
 
                     <h3>Episodes</h3>
-                    <div class="checkboxList" id="SourceLibraries"></div>
                     <div class="fieldDescription">Source libraries (required). Episodes are drawn only from these.</div>
+                    <div id="SourceLibraries"></div>
+
+                    <div class="checkboxContainer checkboxContainer-withDescription">
+                        <label class="emby-checkbox-label">
+                            <input id="AllSeries" type="checkbox" is="emby-checkbox" />
+                            <span>Every series in these libraries</span>
+                        </label>
+                        <div class="fieldDescription checkboxFieldDescription">New series join the rotation automatically. Untick to choose series by hand.</div>
+                    </div>
+                    <div id="SeriesPicker" class="hide">
+                        <div class="inputContainer">
+                            <label class="inputLabel inputLabelUnfocused" for="SeriesFilter">Find a series</label>
+                            <input id="SeriesFilter" type="search" is="emby-input" autocomplete="off" />
+                        </div>
+                        <div>
+                            <button is="emby-button" type="button" id="SeriesAll" class="raised emby-button"><span>Tick all shown</span></button>
+                            <button is="emby-button" type="button" id="SeriesNone" class="raised emby-button"><span>Untick all shown</span></button>
+                            <span id="SeriesCount" class="fieldDescription"></span>
+                        </div>
+                        <div id="SeriesList" style="max-height: 24em; overflow-y: auto; margin: 0.5em 0 1.5em 0;"></div>
+                    </div>
 
                     <div class="inputContainer">
                         <label class="inputLabel inputLabelUnfocused" for="AirDateFrom">Air date from</label>
@@ -50,8 +70,24 @@
                     <div class="selectContainer">
                         <label class="selectLabel" for="CommercialsLibraryId">Commercials library</label>
                         <select is="emby-select" id="CommercialsLibraryId" class="emby-select-withcolor emby-select" required></select>
+                        <div class="fieldDescription">Create an empty "Home Videos and Photos" library with one folder for this (turn off chapter and trickplay image extraction). The sync task writes its .strm files into that folder, so Jellyfin needs write access to it.</div>
                     </div>
-                    <div class="inputContainer">
+
+                    <div class="fieldDescription">Internet Archive items to take commercials from. The identifier is the part after /details/ in the item's address, e.g. archive.org/details/<b>identifier</b>. Include and exclude take comma-separated file name patterns such as *1983*; leave them empty to use every video in the item.</div>
+                    <table style="width: 100%; border-spacing: 0.5em;">
+                        <thead>
+                            <tr>
+                                <th style="text-align: left;">Identifier</th>
+                                <th style="text-align: left;">Include</th>
+                                <th style="text-align: left;">Exclude</th>
+                                <th></th>
+                            </tr>
+                        </thead>
+                        <tbody id="SourceRows"></tbody>
+                    </table>
+                    <button is="emby-button" type="button" id="AddSource" class="raised emby-button"><span>Add item</span></button>
+
+                    <div class="inputContainer" style="margin-top: 1.5em;">
                         <label class="inputLabel inputLabelUnfocused" for="CommercialsMin">Commercials between episodes: minimum</label>
                         <input id="CommercialsMin" type="number" is="emby-input" min="0" />
                     </div>
@@ -82,6 +118,13 @@
                             <span>Save</span>
                         </button>
                     </div>
+
+                    <h3>Run now</h3>
+                    <div class="fieldDescription">Save first. Results appear under Dashboard &gt; Scheduled Tasks and in the server log.</div>
+                    <div>
+                        <button is="emby-button" type="button" id="RunSync" class="raised emby-button"><span>Sync commercials now</span></button>
+                        <button is="emby-button" type="button" id="RunBuild" class="raised emby-button"><span>Build playlist now</span></button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -89,65 +132,204 @@
             (function () {
                 var pluginId = '3108dfcc-d642-4726-9ea3-d4b10ab9461b';
                 var page = document.querySelector('#SaturdayMorningConfigPage');
+                var selectedSeries = {};
+
+                function q(selector) {
+                    return page.querySelector(selector);
+                }
 
                 function normaliseId(id) {
                     return (id || '').replace(/-/g, '').toLowerCase();
                 }
 
+                function el(tag, props, children) {
+                    var node = document.createElement(tag);
+                    Object.keys(props || {}).forEach(function (k) {
+                        if (k === 'is') {
+                            node.setAttribute('is', props[k]);
+                        } else {
+                            node[k] = props[k];
+                        }
+                    });
+                    (children || []).forEach(function (c) { node.appendChild(c); });
+                    return node;
+                }
+
                 function option(value, text, selected) {
-                    var o = document.createElement('option');
-                    o.value = value;
-                    o.textContent = text;
-                    o.selected = selected;
-                    return o;
+                    return el('option', { value: value, textContent: text, selected: selected });
+                }
+
+                function checkbox(className, value, label, checked) {
+                    var box = el('input', { type: 'checkbox', is: 'emby-checkbox', className: className, value: value, checked: checked });
+                    return { box: box, node: el('div', { className: 'checkboxContainer' }, [el('label', { className: 'emby-checkbox-label' }, [box, el('span', { textContent: label })])]) };
+                }
+
+                function checkedLibraries() {
+                    return Array.prototype.map.call(page.querySelectorAll('.sourceLibrary:checked'), function (b) { return b.value; });
+                }
+
+                function updateSeriesCount() {
+                    var n = Object.keys(selectedSeries).length;
+                    q('#SeriesCount').textContent = n + ' series ticked';
+                }
+
+                function applySeriesFilter() {
+                    var needle = q('#SeriesFilter').value.trim().toLowerCase();
+                    Array.prototype.forEach.call(page.querySelectorAll('#SeriesList .checkboxContainer'), function (row) {
+                        row.style.display = !needle || row.dataset.name.indexOf(needle) !== -1 ? '' : 'none';
+                    });
+                }
+
+                function loadSeries() {
+                    var list = q('#SeriesList');
+                    list.textContent = '';
+                    var libraries = checkedLibraries();
+                    if (q('#AllSeries').checked || libraries.length === 0) {
+                        updateSeriesCount();
+                        return Promise.resolve();
+                    }
+                    var userId = ApiClient.getCurrentUserId();
+                    return Promise.all(libraries.map(function (id) {
+                        return ApiClient.getItems(userId, { ParentId: id, IncludeItemTypes: 'Series', Recursive: true, SortBy: 'SortName', Fields: 'ProductionYear' });
+                    })).then(function (results) {
+                        var seen = {};
+                        var series = [];
+                        results.forEach(function (r) {
+                            r.Items.forEach(function (s) {
+                                var id = normaliseId(s.Id);
+                                if (!seen[id]) {
+                                    seen[id] = true;
+                                    series.push(s);
+                                }
+                            });
+                        });
+                        series.sort(function (a, b) { return (a.SortName || a.Name).localeCompare(b.SortName || b.Name); });
+                        series.forEach(function (s) {
+                            var id = normaliseId(s.Id);
+                            var label = s.ProductionYear ? s.Name + ' (' + s.ProductionYear + ')' : s.Name;
+                            var c = checkbox('seriesBox', id, label, !!selectedSeries[id]);
+                            c.node.dataset.name = s.Name.toLowerCase();
+                            c.box.addEventListener('change', function () {
+                                if (c.box.checked) {
+                                    selectedSeries[id] = true;
+                                } else {
+                                    delete selectedSeries[id];
+                                }
+                                updateSeriesCount();
+                            });
+                            list.appendChild(c.node);
+                        });
+                        if (series.length === 0) {
+                            list.appendChild(el('div', { className: 'fieldDescription', textContent: 'No series found in the selected libraries.' }));
+                        }
+                        applySeriesFilter();
+                        updateSeriesCount();
+                    });
+                }
+
+                function toggleSeriesPicker() {
+                    q('#SeriesPicker').classList.toggle('hide', q('#AllSeries').checked);
+                    return loadSeries();
+                }
+
+                function setShownSeries(checked) {
+                    Array.prototype.forEach.call(page.querySelectorAll('#SeriesList .checkboxContainer'), function (row) {
+                        if (row.style.display === 'none') {
+                            return;
+                        }
+                        var box = row.querySelector('.seriesBox');
+                        box.checked = checked;
+                        if (checked) {
+                            selectedSeries[box.value] = true;
+                        } else {
+                            delete selectedSeries[box.value];
+                        }
+                    });
+                    updateSeriesCount();
+                }
+
+                function addSourceRow(source) {
+                    var cell = function (cls, value, placeholder) {
+                        return el('td', {}, [el('input', { type: 'text', is: 'emby-input', className: cls, value: value || '', placeholder: placeholder })]);
+                    };
+                    var remove = el('button', { type: 'button', is: 'emby-button', className: 'raised emby-button', textContent: 'Remove' });
+                    var row = el('tr', {}, [
+                        cell('sourceIdentifier', source.Identifier, 'identifier'),
+                        cell('sourceInclude', source.Include, '*.mp4, *1983*'),
+                        cell('sourceExclude', source.Exclude, '*promo*'),
+                        el('td', {}, [remove])
+                    ]);
+                    remove.addEventListener('click', function () { row.remove(); });
+                    q('#SourceRows').appendChild(row);
+                }
+
+                function readSources() {
+                    return Array.prototype.map.call(page.querySelectorAll('#SourceRows tr'), function (row) {
+                        return {
+                            Identifier: row.querySelector('.sourceIdentifier').value.trim(),
+                            Include: row.querySelector('.sourceInclude').value.trim(),
+                            Exclude: row.querySelector('.sourceExclude').value.trim()
+                        };
+                    }).filter(function (s) { return s.Identifier || s.Include || s.Exclude; });
                 }
 
                 function render(config, folders, users) {
                     var chosen = (config.SourceLibraryIds || []).map(normaliseId);
-                    var list = page.querySelector('#SourceLibraries');
-                    list.textContent = '';
+                    var libs = q('#SourceLibraries');
+                    libs.textContent = '';
                     folders.forEach(function (f) {
-                        var label = document.createElement('label');
-                        label.className = 'emby-checkbox-label';
-                        var box = document.createElement('input');
-                        box.type = 'checkbox';
-                        box.setAttribute('is', 'emby-checkbox');
-                        box.className = 'sourceLibrary';
-                        box.value = normaliseId(f.ItemId);
-                        box.checked = chosen.indexOf(box.value) !== -1;
-                        var span = document.createElement('span');
-                        span.textContent = f.Name;
-                        label.appendChild(box);
-                        label.appendChild(span);
-                        var wrap = document.createElement('div');
-                        wrap.className = 'checkboxContainer';
-                        wrap.appendChild(label);
-                        list.appendChild(wrap);
+                        var c = checkbox('sourceLibrary', normaliseId(f.ItemId), f.Name, chosen.indexOf(normaliseId(f.ItemId)) !== -1);
+                        c.box.addEventListener('change', loadSeries);
+                        libs.appendChild(c.node);
                     });
 
-                    var ads = page.querySelector('#CommercialsLibraryId');
+                    selectedSeries = {};
+                    (config.SelectedSeriesIds || []).forEach(function (id) { selectedSeries[normaliseId(id)] = true; });
+                    q('#AllSeries').checked = config.AllSeries !== false;
+
+                    var ads = q('#CommercialsLibraryId');
                     ads.textContent = '';
                     ads.appendChild(option('', '-- choose --', !config.CommercialsLibraryId));
                     folders.forEach(function (f) {
                         ads.appendChild(option(normaliseId(f.ItemId), f.Name, normaliseId(f.ItemId) === normaliseId(config.CommercialsLibraryId)));
                     });
 
-                    var owner = page.querySelector('#PlaylistOwnerUserId');
+                    q('#SourceRows').textContent = '';
+                    (config.CommercialSources || []).forEach(addSourceRow);
+                    if ((config.CommercialSources || []).length === 0) {
+                        addSourceRow({});
+                    }
+
+                    var owner = q('#PlaylistOwnerUserId');
                     owner.textContent = '';
                     owner.appendChild(option('', '-- choose --', !config.PlaylistOwnerUserId));
                     users.forEach(function (u) {
                         owner.appendChild(option(normaliseId(u.Id), u.Name, normaliseId(u.Id) === normaliseId(config.PlaylistOwnerUserId)));
                     });
 
-                    page.querySelector('#AirDateFrom').value = config.AirDateFrom || '';
-                    page.querySelector('#AirDateTo').value = config.AirDateTo || '';
-                    page.querySelector('#MissingDateFallback').value = config.MissingDateFallback || 'Exclude';
-                    page.querySelector('#OnePerSeries').checked = config.OnePerSeries;
-                    page.querySelector('#MaxEpisodes').value = config.MaxEpisodes;
-                    page.querySelector('#CommercialsMin').value = config.CommercialsMin;
-                    page.querySelector('#CommercialsMax').value = config.CommercialsMax;
-                    page.querySelector('#AvoidRepeatingCommercials').checked = config.AvoidRepeatingCommercials;
-                    page.querySelector('#PlaylistName').value = config.PlaylistName || '';
+                    q('#AirDateFrom').value = config.AirDateFrom || '';
+                    q('#AirDateTo').value = config.AirDateTo || '';
+                    q('#MissingDateFallback').value = config.MissingDateFallback || 'Exclude';
+                    q('#OnePerSeries').checked = config.OnePerSeries;
+                    q('#MaxEpisodes').value = config.MaxEpisodes;
+                    q('#CommercialsMin').value = config.CommercialsMin;
+                    q('#CommercialsMax').value = config.CommercialsMax;
+                    q('#AvoidRepeatingCommercials').checked = config.AvoidRepeatingCommercials;
+                    q('#PlaylistName').value = config.PlaylistName || '';
+                    return toggleSeriesPicker();
+                }
+
+                function runTask(key) {
+                    ApiClient.getScheduledTasks().then(function (tasks) {
+                        var task = tasks.filter(function (t) { return t.Key === key; })[0];
+                        if (!task) {
+                            Dashboard.alert('Task not found. Restart Jellyfin after installing the plugin.');
+                            return;
+                        }
+                        return ApiClient.startScheduledTask(task.Id).then(function () {
+                            Dashboard.alert('Started "' + task.Name + '". Check Dashboard > Scheduled Tasks for the result.');
+                        });
+                    });
                 }
 
                 page.addEventListener('pageshow', function () {
@@ -157,19 +339,33 @@
                         ApiClient.getVirtualFolders(),
                         ApiClient.getUsers()
                     ]).then(function (r) {
-                        render(r[0], r[1], r[2]);
+                        return render(r[0], r[1], r[2]);
                     }).finally(function () {
                         Dashboard.hideLoadingMsg();
                     });
                 });
 
-                page.querySelector('#SaturdayMorningConfigForm').addEventListener('submit', function (e) {
+                q('#AllSeries').addEventListener('change', toggleSeriesPicker);
+                q('#SeriesFilter').addEventListener('input', applySeriesFilter);
+                q('#SeriesAll').addEventListener('click', function () { setShownSeries(true); });
+                q('#SeriesNone').addEventListener('click', function () { setShownSeries(false); });
+                q('#AddSource').addEventListener('click', function () { addSourceRow({}); });
+                q('#RunSync').addEventListener('click', function () { runTask('SaturdayMorningSyncCommercials'); });
+                q('#RunBuild').addEventListener('click', function () { runTask('SaturdayMorningBuildPlaylist'); });
+
+                q('#SaturdayMorningConfigForm').addEventListener('submit', function (e) {
                     e.preventDefault();
-                    var min = parseInt(page.querySelector('#CommercialsMin').value, 10) || 0;
-                    var max = parseInt(page.querySelector('#CommercialsMax').value, 10) || 0;
-                    var sources = Array.prototype.map.call(page.querySelectorAll('.sourceLibrary:checked'), function (b) { return b.value; });
+                    var min = parseInt(q('#CommercialsMin').value, 10) || 0;
+                    var max = parseInt(q('#CommercialsMax').value, 10) || 0;
+                    var sources = checkedLibraries();
+                    var allSeries = q('#AllSeries').checked;
+                    var series = Object.keys(selectedSeries);
                     if (sources.length === 0) {
                         Dashboard.alert('Select at least one source library.');
+                        return false;
+                    }
+                    if (!allSeries && series.length === 0) {
+                        Dashboard.alert('Tick at least one series, or choose every series.');
                         return false;
                     }
                     if (max < min) {
@@ -179,17 +375,20 @@
                     Dashboard.showLoadingMsg();
                     ApiClient.getPluginConfiguration(pluginId).then(function (config) {
                         config.SourceLibraryIds = sources;
-                        config.AirDateFrom = page.querySelector('#AirDateFrom').value;
-                        config.AirDateTo = page.querySelector('#AirDateTo').value;
-                        config.MissingDateFallback = page.querySelector('#MissingDateFallback').value;
-                        config.OnePerSeries = page.querySelector('#OnePerSeries').checked;
-                        config.MaxEpisodes = parseInt(page.querySelector('#MaxEpisodes').value, 10) || 0;
-                        config.CommercialsLibraryId = page.querySelector('#CommercialsLibraryId').value;
+                        config.AllSeries = allSeries;
+                        config.SelectedSeriesIds = series;
+                        config.AirDateFrom = q('#AirDateFrom').value;
+                        config.AirDateTo = q('#AirDateTo').value;
+                        config.MissingDateFallback = q('#MissingDateFallback').value;
+                        config.OnePerSeries = q('#OnePerSeries').checked;
+                        config.MaxEpisodes = parseInt(q('#MaxEpisodes').value, 10) || 0;
+                        config.CommercialsLibraryId = q('#CommercialsLibraryId').value;
+                        config.CommercialSources = readSources();
                         config.CommercialsMin = min;
                         config.CommercialsMax = max;
-                        config.AvoidRepeatingCommercials = page.querySelector('#AvoidRepeatingCommercials').checked;
-                        config.PlaylistName = page.querySelector('#PlaylistName').value;
-                        config.PlaylistOwnerUserId = page.querySelector('#PlaylistOwnerUserId').value;
+                        config.AvoidRepeatingCommercials = q('#AvoidRepeatingCommercials').checked;
+                        config.PlaylistName = q('#PlaylistName').value;
+                        config.PlaylistOwnerUserId = q('#PlaylistOwnerUserId').value;
                         return ApiClient.updatePluginConfiguration(pluginId, config);
                     }).then(function (result) {
                         Dashboard.processPluginConfigurationUpdateResult(result);

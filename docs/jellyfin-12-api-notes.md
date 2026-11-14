@@ -80,6 +80,25 @@ per library is used.
 `MediaTypes (MediaType[])`, `IsFolder (bool?)`, `IsVirtualItem (bool?)`,
 `DtoOptions`.
 
+## Commercials sync (plugin-side)
+
+- `MediaBrowser.Controller.Providers.IProviderManager.QueueRefresh(Guid itemId,
+  MetadataRefreshOptions options, RefreshPriority priority)` with the library id
+  rescans one library. This is what `POST /Items/{id}/Refresh` does in 12.1,
+  which has no `Recursive` parameter; a folder refresh validates its children.
+- `ILibraryManager.GetVirtualFolders()` -> `VirtualFolderInfo.Locations` (string[])
+  gives the commercials folder. The sync task requires exactly one location.
+- `IHttpClientFactory.CreateClient(NamedClient.Default)` is Jellyfin's shared
+  outbound client. The task sets its own User-Agent per request.
+
+## Settings page (existing admin APIs only)
+
+`ApiClient.getVirtualFolders()`, `ApiClient.getUsers()`,
+`ApiClient.getItems(userId, {ParentId, IncludeItemTypes: 'Series', Recursive: true})`,
+`ApiClient.getScheduledTasks()`, `ApiClient.startScheduledTask(id)`,
+`ApiClient.get/updatePluginConfiguration(pluginId, config)`. All of these are in
+the 12.1 `jellyfin-apiclient` bundle shipped with jellyfin-web.
+
 ## Entities
 
 - `Episode`: `SeriesId (Guid)`, `Series` (looked up through the library manager),
@@ -109,6 +128,8 @@ per library is used.
 
 - Media under a dot-folder (any path segment starting with `.`) is ignored by
   the scanner. The `.strm` folder must not live under a hidden directory.
+- Creating two libraries back to back with `refreshLibrary=true` can leave the
+  second unscanned while the first scan runs. Scan again (`POST /Library/Refresh`).
 - A `.strm` file in a Home Videos library becomes a `Video` item. Its own
   `Path` is the `.strm` file, while `PlaybackInfo` returns
   `MediaSources[0].Path` = the URL, `Protocol = Http`, `IsRemote = true`, so

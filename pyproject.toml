@@ -1,16 +1,13 @@
 [project]
-name = "sm-commercials"
-version = "1.0.0"
-description = "Builds the Saturday Morning commercials library as .strm files pointing at the Internet Archive."
+name = "sm-release"
+version = "1.1.0"
+description = "Release tooling for the Saturday Morning Jellyfin plugin (meta.json and repository manifest)."
 requires-python = ">=3.11"
 license = { text = "GPL-3.0-or-later" }
 dependencies = []
 
 [project.optional-dependencies]
 dev = ["pytest", "pytest-cov", "ruff", "mypy"]
-
-[project.scripts]
-sm-commercials = "sm_commercials.cli:main"
 
 [build-system]
 requires = ["setuptools>=68"]
@@ -41,7 +38,7 @@ mypy_path = "builder"
 [tool.pytest.ini_options]
 testpaths = ["tests/python"]
 pythonpath = ["builder"]
-addopts = "--cov=sm_commercials --cov=sm_release --cov-branch --cov-report=term-missing"
+addopts = "--cov=sm_release --cov-branch --cov-report=term-missing"
 
 [tool.ruff.lint.isort]
-known-first-party = ["sm_commercials", "sm_release"]
+known-first-party = ["sm_release"]

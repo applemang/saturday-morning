@@ -195,4 +195,22 @@ public class EpisodeSelectionTests
     {
         Assert.Equal([1, 2], EpisodeSelection.ApplyCap([1, 2], 10));
     }
+
+    [Fact]
+    public void FilterBySeries_NullMeansAllSeries()
+    {
+        var episodes = new[] { Ep(1, 1, From), Ep(2, 2, From) };
+
+        Assert.Equal(episodes, EpisodeSelection.FilterBySeries(episodes, null));
+    }
+
+    [Fact]
+    public void FilterBySeries_KeepsOnlySelectedSeries()
+    {
+        var episodes = new[] { Ep(1, 1, From), Ep(2, 2, From), Ep(3, 1, null) };
+
+        var kept = EpisodeSelection.FilterBySeries(episodes, new HashSet<Guid> { G(1001) });
+
+        Assert.Equal([G(1), G(3)], kept.Select(e => e.Id));
+    }
 }

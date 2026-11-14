@@ -23,7 +23,7 @@ VERSION="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)"
 
 STAGE="artifacts/stage"
 ZIP="artifacts/saturday-morning_${VERSION}.zip"
-rm -rf "$STAGE" "$ZIP" "$ZIP.md5"
+rm -rf "$STAGE" artifacts/publish artifacts/saturday-morning_*
 mkdir -p "$STAGE"
 
 "$DOTNET" publish src/Jellyfin.Plugin.SaturdayMorning -c Release -o artifacts/publish --nologo -v q

@@ -19,7 +19,7 @@ public static class PlaylistPlanner
     /// <returns>The plan.</returns>
     /// <exception cref="SelectionException">Nothing to build a playlist from.</exception>
     public static PlaylistPlan Plan(
-        IEnumerable<EpisodeCandidate> episodes,
+        IReadOnlyList<EpisodeCandidate> episodes,
         IReadOnlyList<Guid> commercials,
         SelectionSettings settings,
         Random random)
@@ -29,11 +29,12 @@ public static class PlaylistPlanner
             throw new SelectionException("The commercials library returned no items, but commercial breaks are configured.");
         }
 
-        var filtered = EpisodeSelection.FilterByAirDate(episodes, settings.AirDateFrom, settings.AirDateTo, settings.Fallback);
+        var inRotation = EpisodeSelection.FilterBySeries(episodes, settings.SeriesIds);
+        var filtered = EpisodeSelection.FilterByAirDate(inRotation, settings.AirDateFrom, settings.AirDateTo, settings.Fallback);
         if (filtered.Kept.Count == 0)
         {
             throw new SelectionException(FormattableString.Invariant(
-                $"No episodes in the source libraries aired between {settings.AirDateFrom:yyyy-MM-dd} and {settings.AirDateTo:yyyy-MM-dd} ({filtered.SkippedMissingDate} skipped for missing dates)."));
+                $"No episodes in the selected series aired between {settings.AirDateFrom:yyyy-MM-dd} and {settings.AirDateTo:yyyy-MM-dd} ({filtered.SkippedMissingDate} skipped for missing dates)."));
         }
 
         var picked = settings.OnePerSeries

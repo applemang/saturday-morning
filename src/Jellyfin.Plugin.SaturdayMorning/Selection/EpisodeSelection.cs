@@ -10,6 +10,15 @@ namespace Jellyfin.Plugin.SaturdayMorning.Selection;
 public static class EpisodeSelection
 {
     /// <summary>
+    /// Keeps episodes whose series is in the allowed set.
+    /// </summary>
+    /// <param name="episodes">Candidate episodes.</param>
+    /// <param name="seriesIds">Allowed series, or null for every series.</param>
+    /// <returns>The episodes of allowed series, in input order.</returns>
+    public static IReadOnlyList<EpisodeCandidate> FilterBySeries(IReadOnlyList<EpisodeCandidate> episodes, IReadOnlySet<Guid>? seriesIds)
+        => seriesIds is null ? episodes : episodes.Where(e => seriesIds.Contains(e.SeriesId)).ToList();
+
+    /// <summary>
     /// Keeps episodes whose air date is within [from, to], inclusive.
     /// </summary>
     /// <remarks>

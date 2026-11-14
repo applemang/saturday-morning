@@ -129,12 +129,15 @@ Jeltz is wired into this project at .jeltz (symlink to ~/.local/share/jeltz/). S
 These extend and, where stated, override the jeltz defaults above.
 
 - **Two stacks.** C# Jellyfin plugin (`src/`, `tests/Jellyfin.Plugin.SaturdayMorning.Tests`)
-  and Python commercials builder + release tooling (`builder/`, `tests/python`).
+  and Python release tooling (`builder/sm_release`, `tests/python`) plus the integration
+  harness (`tests/integration`).
+- **Everything user-facing is configured in the Jellyfin UI.** No config files or scripts
+  for end users; new settings go on the plugin settings page, new work in scheduled tasks.
   `make verify` gates both: ruff, mypy (strict), `dotnet format --verify-no-changes`,
   Release build with warnings as errors (nullable + all .NET analyzers), pytest and
   xunit (Microsoft Testing Platform) with coverage thresholds.
 - **Coverage exception (explicit).** 100% line+branch is enforced for all Python code and
-  for the plugin's `Selection/` and `Configuration/` code. The Jellyfin adapter
+  for the plugin's `Selection/`, `Configuration/` and `Commercials/` code. The Jellyfin adapter
   (`Adapter/`), scheduled task (`Tasks/`) and `Plugin.cs` need a running server and are
   excluded from unit coverage; they are covered by `make integration` against a real
   Jellyfin 12.1. Keep that layer thin: logic goes in `Selection/`.

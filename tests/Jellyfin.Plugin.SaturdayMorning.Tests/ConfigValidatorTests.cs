@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Jellyfin.Plugin.SaturdayMorning.Configuration;
 using Jellyfin.Plugin.SaturdayMorning.Selection;
 using Xunit;
@@ -38,6 +39,9 @@ public class ConfigValidatorTests
         Assert.True(config.AvoidRepeatingCommercials);
         Assert.Equal("Saturday Morning", config.PlaylistName);
         Assert.Equal(string.Empty, config.PlaylistOwnerUserId);
+        Assert.True(config.AllSeries);
+        Assert.Empty(config.SelectedSeriesIds);
+        Assert.Empty(config.CommercialSources);
     }
 
     [Fact]
@@ -154,5 +158,121 @@ public class ConfigValidatorTests
         config.MissingDateFallback = (MissingDateFallback)42;
 
         Assert.Single(ConfigValidator.Validate(config).Errors);
+    }
+
+    [Fact]
+    public void Validate_AllSeries_LeavesSeriesFilterEmpty()
+    {
+        var config = Valid();
+        config.SelectedSeriesIds = ["55555555555555555555555555555555"];
+
+        var v = ConfigValidator.Validate(config).Config!;
+
+        Assert.Null(v.Selection.SeriesIds);
+    }
+
+    [Fact]
+    public void Validate_SelectedSeries_BecomesTheSeriesFilter()
+    {
+        var s1 = Guid.Parse("55555555555555555555555555555555");
+        var s2 = Guid.Parse("66666666666666666666666666666666");
+        var config = Valid();
+        config.AllSeries = false;
+        config.SelectedSeriesIds = [s1.ToString("N"), s2.ToString(), s1.ToString()];
+
+        var v = ConfigValidator.Validate(config).Config!;
+
+        Assert.NotNull(v.Selection.SeriesIds);
+        Assert.Equal(new HashSet<Guid> { s1, s2 }, v.Selection.SeriesIds);
+    }
+
+    [Fact]
+    public void Validate_SelectedSeriesRequiredWhenNotAllSeries()
+    {
+        var config = Valid();
+        config.AllSeries = false;
+
+        Assert.Contains(ConfigValidator.Validate(config).Errors, e => e.Contains("series", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void Validate_RejectsInvalidSeriesIds()
+    {
+        var config = Valid();
+        config.AllSeries = false;
+        config.SelectedSeriesIds = ["nope"];
+
+        Assert.Single(ConfigValidator.Validate(config).Errors);
+    }
+
+    [Fact]
+    public void Validate_PlaylistDoesNotNeedCommercialSources()
+    {
+        var config = Valid();
+        config.CommercialSources = [new CommercialSource { Identifier = "bad id!" }];
+
+        Assert.True(ConfigValidator.Validate(config).IsValid);
+    }
+
+    [Fact]
+    public void ValidateSources_ParsesIdentifiersAndPatterns()
+    {
+        var config = Valid();
+        config.CommercialSources =
+        [
+            new CommercialSource { Identifier = " classic_tv_ads " },
+            new CommercialSource { Identifier = "toy-ads.1980s", Include = "*1983*, *1984* ,", Exclude = "*promo*" },
+        ];
+
+        var result = ConfigValidator.ValidateSources(config);
+
+        Assert.Empty(result.Errors);
+        Assert.Equal(Ads, result.CommercialsLibraryId);
+        Assert.Equal(2, result.Sources.Count);
+        Assert.Equal("classic_tv_ads", result.Sources[0].Identifier);
+        Assert.Empty(result.Sources[0].Include);
+        Assert.Equal(["*1983*", "*1984*"], result.Sources[1].Include);
+        Assert.Equal(["*promo*"], result.Sources[1].Exclude);
+    }
+
+    [Fact]
+    public void ValidateSources_RequiresLibraryAndAtLeastOneSource()
+    {
+        var result = ConfigValidator.ValidateSources(new PluginConfiguration());
+
+        Assert.Equal(2, result.Errors.Count);
+        Assert.Empty(result.Sources);
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("a b")]
+    [InlineData("../etc")]
+    [InlineData("-leading")]
+    public void ValidateSources_RejectsBadIdentifiers(string identifier)
+    {
+        var config = Valid();
+        config.CommercialSources = [new CommercialSource { Identifier = identifier }];
+
+        Assert.Single(ConfigValidator.ValidateSources(config).Errors);
+    }
+
+    [Fact]
+    public void ValidateSources_RejectsDuplicates()
+    {
+        var config = Valid();
+        config.CommercialSources = [new CommercialSource { Identifier = "a" }, new CommercialSource { Identifier = "A" }];
+
+        Assert.Contains(ConfigValidator.ValidateSources(config).Errors, e => e.Contains("more than once", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void ValidateSources_RejectsInvalidLibraryId()
+    {
+        var config = Valid();
+        config.CommercialsLibraryId = "x";
+        config.CommercialSources = [new CommercialSource { Identifier = "a" }];
+
+        Assert.Single(ConfigValidator.ValidateSources(config).Errors);
     }
 }

@@ -47,11 +47,9 @@ SERIES: dict[str, tuple[str, list[tuple[int, str | None]]]] = {
 }
 AIR_FROM, AIR_TO = "1985-01-01", "1989-12-31"
 LOCAL_ADS = 5
-ARCHIVE_ADS = [
-    # Public domain (archive.org item ctvc, licence publicdomain); 512Kb MPEG4 derivatives.
-    "https://archive.org/download/ctvc/ctvc_BAYER_512kb.mp4",
-    "https://archive.org/download/ctvc/ctvc_CHESTER_512kb.mp4",
-]
+# Public domain item (licence publicdomain), narrowed to two clips for the sync test.
+ARCHIVE_SOURCE = {"Identifier": "ctvc", "Include": "*BAYER*, *CHESTER*", "Exclude": ""}
+ARCHIVE_STRM = ["ctvc - ctvc_BAYER_512kb.strm", "ctvc - ctvc_CHESTER_512kb.strm"]
 
 
 def _ffmpeg_clip(path: Path, seconds: int, colour: str) -> None:
@@ -87,7 +85,7 @@ def _ffmpeg_clip(path: Path, seconds: int, colour: str) -> None:
     )
 
 
-def _write_library(base: Path, ads_url: str, with_archive: bool) -> tuple[Path, Path]:
+def _write_library(base: Path, ads_url: str) -> tuple[Path, Path]:
     tv = base / "tv"
     for series, (premiered, episodes) in SERIES.items():
         show = tv / series
@@ -112,10 +110,6 @@ def _write_library(base: Path, ads_url: str, with_archive: bool) -> tuple[Path, 
     for i in range(1, LOCAL_ADS + 1):
         _ffmpeg_clip(www / f"ad{i}.mp4", 2, "red")
         (ads / f"local - ad{i}.strm").write_text(f"{ads_url}/ad{i}.mp4\n")
-    if with_archive:
-        for url in ARCHIVE_ADS:
-            name = url.rsplit("/", 1)[1].removesuffix(".mp4")
-            (ads / f"ctvc - {name}.strm").write_text(url + "\n")
     return tv, ads
 
 
@@ -126,7 +120,6 @@ class Api:
     base: str
     token: str | None = None
     user_id: str = ""
-    extra: dict[str, Any] = field(default_factory=dict)
 
     def header(self) -> str:
         return CLIENT + (f', Token="{self.token}"' if self.token else "")
@@ -186,6 +179,7 @@ class Server:
     tv_library_id: str
     ads_library_id: str
     with_archive: bool
+    extra_paths: dict[str, Path] = field(default_factory=dict)
 
     def wait_up(self, timeout: float = 240) -> None:
         def up() -> bool:
@@ -293,7 +287,7 @@ def server() -> Iterator[Server]:
         "<EnableIPv6>false</EnableIPv6></NetworkConfiguration>\n"
     )
     httpd, www_url = _serve(run_dir / "www")
-    tv, ads = _write_library(run_dir / "media", www_url, with_archive)
+    tv, ads = _write_library(run_dir / "media", www_url)
     for f in (run_dir / "media" / "www").iterdir():
         shutil.move(str(f), run_dir / "www" / f.name)
     # SM_IT_INSTALL_ZIP follows the manual install instructions (unzip into
@@ -343,32 +337,12 @@ def server() -> Iterator[Server]:
         )
         api.token, api.user_id = auth["AccessToken"], auth["User"]["Id"]
 
-        # A dedicated API key, as on the real server; the builder uses it below.
-        api.call("POST", "/Auth/Keys", query={"app": "saturday-morning-it"})
-        key = next(
-            k["AccessToken"]
-            for k in api.call("GET", "/Auth/Keys")["Items"]
-            if k["AppName"] == "saturday-morning-it"
-        )
-        api.extra["api_key"] = key
-
-        api.call(
-            "POST",
-            "/Library/VirtualFolders",
-            query={
-                "name": "Cartoons",
-                "collectionType": "tvshows",
-                "paths": str(tv),
-                "refreshLibrary": "true",
-            },
-            body=_library_options(),
-        )
-        srv.tv_library_id = next(
-            f["ItemId"]
-            for f in api.call("GET", "/Library/VirtualFolders")
-            if f["Name"] == "Cartoons"
-        )
-        srv.ads_library_id = _register_commercials(srv, ads)
+        srv.tv_library_id = _add_library(api, "Cartoons", "tvshows", tv)
+        srv.ads_library_id = _add_library(api, "Commercials", "homevideos", ads)
+        srv.extra_paths["commercials"] = ads
+        # Dashboard > Libraries > Scan All Libraries: the second library's own scan
+        # request is dropped while the first library is still scanning.
+        api.call("POST", "/Library/Refresh")
         expected = sum(len(e) for _, e in SERIES.values())
 
         def scanned() -> bool:
@@ -388,7 +362,7 @@ def server() -> Iterator[Server]:
                     "userId": api.user_id,
                 },
             )
-            want_ads = LOCAL_ADS + (len(ARCHIVE_ADS) if with_archive else 0)
+            want_ads = LOCAL_ADS
             got = (eps["TotalRecordCount"], ads_items["TotalRecordCount"])
             if got != (expected, want_ads):
                 raise AssertionError(f"episodes/commercials {got}, want {(expected, want_ads)}")
@@ -428,19 +402,22 @@ def _hold(run_dir: Path) -> None:
         return
 
 
-def _register_commercials(srv: Server, ads: Path) -> str:
-    """Create the commercials library through the builder's own Jellyfin client."""
-    from sm_commercials.http import HttpClient
-    from sm_commercials.jellyfin import JellyfinClient
-
-    client = JellyfinClient(
-        srv.api.base, srv.api.extra["api_key"], HttpClient("sm-it", delay_seconds=0)
+def _add_library(api: Api, name: str, collection_type: str, path: Path) -> str:
+    """Create a library the way the dashboard does (Add Media Library)."""
+    api.call(
+        "POST",
+        "/Library/VirtualFolders",
+        query={
+            "name": name,
+            "collectionType": collection_type,
+            "paths": str(path),
+            "refreshLibrary": "true",
+        },
+        body=_library_options(),
     )
-    library_id, created = client.ensure_library("Commercials", str(ads))
-    assert created
-    assert client.ensure_library("Commercials", str(ads)) == (library_id, False)
-    client.refresh_library(library_id)
-    return library_id
+    return str(
+        next(f["ItemId"] for f in api.call("GET", "/Library/VirtualFolders") if f["Name"] == name)
+    )
 
 
 def _install_plugin(srv: Server) -> None:

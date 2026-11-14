@@ -85,6 +85,27 @@ public class PlaylistPlannerTests
     }
 
     [Fact]
+    public void Plan_SeriesFilterRunsBeforeEverythingElse()
+    {
+        var settings = Defaults with { SeriesIds = new HashSet<Guid> { G(1001), G(1008) } };
+
+        var plan = PlaylistPlanner.Plan(Library(), Commercials(40), settings, new Random(3));
+
+        Assert.Equal(1, plan.EpisodeCount);
+        Assert.Equal(1, plan.SkippedMissingDate);
+        var seriesOne = Enumerable.Range(100, 10).Select(G).ToHashSet();
+        Assert.Contains(plan.Items.Single(i => i.Kind == PlanItemKind.Episode).Id, seriesOne);
+    }
+
+    [Fact]
+    public void Plan_SeriesFilterMatchingNothing_Throws()
+    {
+        var settings = Defaults with { SeriesIds = new HashSet<Guid> { G(4242) } };
+
+        Assert.Throws<SelectionException>(() => PlaylistPlanner.Plan(Library(), Commercials(4), settings, new Random(3)));
+    }
+
+    [Fact]
     public void Plan_AppliesCapAfterSelection()
     {
         var settings = Defaults with { MaxEpisodes = 4 };

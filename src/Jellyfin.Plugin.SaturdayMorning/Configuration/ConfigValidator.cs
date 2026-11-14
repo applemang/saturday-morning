@@ -1,6 +1,9 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
+using System.Text.RegularExpressions;
+using Jellyfin.Plugin.SaturdayMorning.Commercials;
 using Jellyfin.Plugin.SaturdayMorning.Selection;
 
 namespace Jellyfin.Plugin.SaturdayMorning.Configuration;
@@ -32,9 +35,20 @@ public sealed record ConfigValidationResult(IReadOnlyList<string> Errors, Valida
 }
 
 /// <summary>
+/// Outcome of validating the settings the commercials sync task needs.
+/// </summary>
+/// <param name="Errors">Human-readable problems; empty when valid.</param>
+/// <param name="CommercialsLibraryId">Library whose folder receives the .strm files.</param>
+/// <param name="Sources">Parsed sources.</param>
+public sealed record SourcesValidationResult(
+    IReadOnlyList<string> Errors,
+    Guid CommercialsLibraryId,
+    IReadOnlyList<CommercialSourceSpec> Sources);
+
+/// <summary>
 /// Checks the stored configuration and converts it to typed settings.
 /// </summary>
-public static class ConfigValidator
+public static partial class ConfigValidator
 {
     private const string DateFormat = "yyyy-MM-dd";
 
@@ -101,6 +115,28 @@ public static class ConfigValidator
 
         var owner = ParseRequiredId(config.PlaylistOwnerUserId, "Playlist owner", errors);
 
+        HashSet<Guid>? series = null;
+        if (!config.AllSeries)
+        {
+            series = [];
+            foreach (var raw in config.SelectedSeriesIds)
+            {
+                if (TryParseId(raw, out var id))
+                {
+                    series.Add(id);
+                }
+                else
+                {
+                    errors.Add($"Series id '{raw}' is not valid.");
+                }
+            }
+
+            if (config.SelectedSeriesIds.Length == 0)
+            {
+                errors.Add("Tick at least one series, or choose all series.");
+            }
+        }
+
         if (errors.Count > 0)
         {
             return new ConfigValidationResult(errors, null);
@@ -114,9 +150,56 @@ public static class ConfigValidator
             config.MaxEpisodes,
             config.CommercialsMin,
             config.CommercialsMax,
-            config.AvoidRepeatingCommercials);
+            config.AvoidRepeatingCommercials,
+            series);
         return new ConfigValidationResult(errors, new ValidatedConfig(libraries, commercials, owner, name, selection));
     }
+
+    /// <summary>
+    /// Validates what the commercials sync task needs: the library and the archive.org items.
+    /// </summary>
+    /// <param name="config">Stored configuration.</param>
+    /// <returns>Errors, or the library id and parsed sources.</returns>
+    public static SourcesValidationResult ValidateSources(PluginConfiguration config)
+    {
+        var errors = new List<string>();
+        var library = ParseRequiredId(config.CommercialsLibraryId, "Commercials library", errors);
+
+        var sources = new List<CommercialSourceSpec>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var source in config.CommercialSources)
+        {
+            var identifier = source.Identifier.Trim();
+            if (!IdentifierPattern().IsMatch(identifier))
+            {
+                errors.Add($"Internet Archive identifier '{identifier}' is not valid.");
+                continue;
+            }
+
+            if (!seen.Add(identifier))
+            {
+                errors.Add($"Internet Archive identifier '{identifier}' is listed more than once.");
+                continue;
+            }
+
+            sources.Add(new CommercialSourceSpec(identifier, SplitPatterns(source.Include), SplitPatterns(source.Exclude)));
+        }
+
+        if (config.CommercialSources.Length == 0)
+        {
+            errors.Add("Add at least one Internet Archive item under Commercials.");
+        }
+
+        return errors.Count > 0
+            ? new SourcesValidationResult(errors, Guid.Empty, [])
+            : new SourcesValidationResult(errors, library, sources);
+    }
+
+    private static string[] SplitPatterns(string raw)
+        => raw.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries);
+
+    [GeneratedRegex("^[A-Za-z0-9][A-Za-z0-9._-]*$")]
+    private static partial Regex IdentifierPattern();
 
     private static bool TryParseId(string raw, out Guid id)
         => Guid.TryParse(raw, out id) && id != Guid.Empty;

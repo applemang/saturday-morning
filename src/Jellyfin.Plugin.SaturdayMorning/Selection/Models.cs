@@ -69,6 +69,7 @@ public sealed record InterleaveResult(IReadOnlyList<PlanItem> Items, int Commerc
 /// <param name="CommercialsMin">Minimum commercials per break.</param>
 /// <param name="CommercialsMax">Maximum commercials per break.</param>
 /// <param name="AvoidRepeatingCommercials">Avoid using a commercial twice in one run.</param>
+/// <param name="SeriesIds">Series allowed in the rotation; null means every series.</param>
 public sealed record SelectionSettings(
     DateOnly AirDateFrom,
     DateOnly AirDateTo,
@@ -77,7 +78,8 @@ public sealed record SelectionSettings(
     int MaxEpisodes,
     int CommercialsMin,
     int CommercialsMax,
-    bool AvoidRepeatingCommercials);
+    bool AvoidRepeatingCommercials,
+    IReadOnlySet<Guid>? SeriesIds = null);
 
 /// <summary>
 /// The finished plan for one run.
