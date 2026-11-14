@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Saturday Morning</title>
+</head>
+<body>
+    <div id="SaturdayMorningConfigPage" data-role="page" class="page type-interior pluginConfigurationPage" data-require="emby-input,emby-button,emby-select,emby-checkbox">
+        <div data-role="content">
+            <div class="content-primary">
+                <form id="SaturdayMorningConfigForm">
+                    <div class="sectionTitleContainer flex align-items-center">
+                        <h2 class="sectionTitle">Saturday Morning</h2>
+                    </div>
+                    <p>The playlist is rebuilt by the scheduled task "Build Saturday Morning playlist". Change its schedule under Dashboard &gt; Scheduled Tasks.</p>
+
+                    <h3>Episodes</h3>
+                    <div class="checkboxList" id="SourceLibraries"></div>
+                    <div class="fieldDescription">Source libraries (required). Episodes are drawn only from these.</div>
+
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AirDateFrom">Air date from</label>
+                        <input id="AirDateFrom" type="date" is="emby-input" required />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="AirDateTo">Air date to</label>
+                        <input id="AirDateTo" type="date" is="emby-input" required />
+                        <div class="fieldDescription">Inclusive range.</div>
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="MissingDateFallback">When an episode has no premiere date</label>
+                        <select is="emby-select" id="MissingDateFallback" class="emby-select-withcolor emby-select">
+                            <option value="Exclude">Exclude it</option>
+                            <option value="UseSeriesPremiereYear">Use the series premiere year</option>
+                        </select>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="OnePerSeries" type="checkbox" is="emby-checkbox" />
+                            <span>One episode per series per run</span>
+                        </label>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="MaxEpisodes">Maximum episodes per run</label>
+                        <input id="MaxEpisodes" type="number" is="emby-input" min="0" />
+                        <div class="fieldDescription">0 means no cap.</div>
+                    </div>
+
+                    <h3>Commercials</h3>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="CommercialsLibraryId">Commercials library</label>
+                        <select is="emby-select" id="CommercialsLibraryId" class="emby-select-withcolor emby-select" required></select>
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CommercialsMin">Commercials between episodes: minimum</label>
+                        <input id="CommercialsMin" type="number" is="emby-input" min="0" />
+                    </div>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="CommercialsMax">Commercials between episodes: maximum</label>
+                        <input id="CommercialsMax" type="number" is="emby-input" min="0" />
+                        <div class="fieldDescription">Each break gets a random count in this range.</div>
+                    </div>
+                    <div class="checkboxContainer">
+                        <label class="emby-checkbox-label">
+                            <input id="AvoidRepeatingCommercials" type="checkbox" is="emby-checkbox" />
+                            <span>Avoid repeating a commercial within a run</span>
+                        </label>
+                    </div>
+
+                    <h3>Playlist</h3>
+                    <div class="inputContainer">
+                        <label class="inputLabel inputLabelUnfocused" for="PlaylistName">Playlist name</label>
+                        <input id="PlaylistName" type="text" is="emby-input" required />
+                    </div>
+                    <div class="selectContainer">
+                        <label class="selectLabel" for="PlaylistOwnerUserId">Playlist owner</label>
+                        <select is="emby-select" id="PlaylistOwnerUserId" class="emby-select-withcolor emby-select" required></select>
+                    </div>
+
+                    <div>
+                        <button is="emby-button" type="submit" class="raised button-submit block emby-button">
+                            <span>Save</span>
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+        <script type="text/javascript">
+            (function () {
+                var pluginId = '3108dfcc-d642-4726-9ea3-d4b10ab9461b';
+                var page = document.querySelector('#SaturdayMorningConfigPage');
+
+                function normaliseId(id) {
+                    return (id || '').replace(/-/g, '').toLowerCase();
+                }
+
+                function option(value, text, selected) {
+                    var o = document.createElement('option');
+                    o.value = value;
+                    o.textContent = text;
+                    o.selected = selected;
+                    return o;
+                }
+
+                function render(config, folders, users) {
+                    var chosen = (config.SourceLibraryIds || []).map(normaliseId);
+                    var list = page.querySelector('#SourceLibraries');
+                    list.textContent = '';
+                    folders.forEach(function (f) {
+                        var label = document.createElement('label');
+                        label.className = 'emby-checkbox-label';
+                        var box = document.createElement('input');
+                        box.type = 'checkbox';
+                        box.setAttribute('is', 'emby-checkbox');
+                        box.className = 'sourceLibrary';
+                        box.value = normaliseId(f.ItemId);
+                        box.checked = chosen.indexOf(box.value) !== -1;
+                        var span = document.createElement('span');
+                        span.textContent = f.Name;
+                        label.appendChild(box);
+                        label.appendChild(span);
+                        var wrap = document.createElement('div');
+                        wrap.className = 'checkboxContainer';
+                        wrap.appendChild(label);
+                        list.appendChild(wrap);
+                    });
+
+                    var ads = page.querySelector('#CommercialsLibraryId');
+                    ads.textContent = '';
+                    ads.appendChild(option('', '-- choose --', !config.CommercialsLibraryId));
+                    folders.forEach(function (f) {
+                        ads.appendChild(option(normaliseId(f.ItemId), f.Name, normaliseId(f.ItemId) === normaliseId(config.CommercialsLibraryId)));
+                    });
+
+                    var owner = page.querySelector('#PlaylistOwnerUserId');
+                    owner.textContent = '';
+                    owner.appendChild(option('', '-- choose --', !config.PlaylistOwnerUserId));
+                    users.forEach(function (u) {
+                        owner.appendChild(option(normaliseId(u.Id), u.Name, normaliseId(u.Id) === normaliseId(config.PlaylistOwnerUserId)));
+                    });
+
+                    page.querySelector('#AirDateFrom').value = config.AirDateFrom || '';
+                    page.querySelector('#AirDateTo').value = config.AirDateTo || '';
+                    page.querySelector('#MissingDateFallback').value = config.MissingDateFallback || 'Exclude';
+                    page.querySelector('#OnePerSeries').checked = config.OnePerSeries;
+                    page.querySelector('#MaxEpisodes').value = config.MaxEpisodes;
+                    page.querySelector('#CommercialsMin').value = config.CommercialsMin;
+                    page.querySelector('#CommercialsMax').value = config.CommercialsMax;
+                    page.querySelector('#AvoidRepeatingCommercials').checked = config.AvoidRepeatingCommercials;
+                    page.querySelector('#PlaylistName').value = config.PlaylistName || '';
+                }
+
+                page.addEventListener('pageshow', function () {
+                    Dashboard.showLoadingMsg();
+                    Promise.all([
+                        ApiClient.getPluginConfiguration(pluginId),
+                        ApiClient.getVirtualFolders(),
+                        ApiClient.getUsers()
+                    ]).then(function (r) {
+                        render(r[0], r[1], r[2]);
+                    }).finally(function () {
+                        Dashboard.hideLoadingMsg();
+                    });
+                });
+
+                page.querySelector('#SaturdayMorningConfigForm').addEventListener('submit', function (e) {
+                    e.preventDefault();
+                    var min = parseInt(page.querySelector('#CommercialsMin').value, 10) || 0;
+                    var max = parseInt(page.querySelector('#CommercialsMax').value, 10) || 0;
+                    var sources = Array.prototype.map.call(page.querySelectorAll('.sourceLibrary:checked'), function (b) { return b.value; });
+                    if (sources.length === 0) {
+                        Dashboard.alert('Select at least one source library.');
+                        return false;
+                    }
+                    if (max < min) {
+                        Dashboard.alert('Maximum commercials must be at least the minimum.');
+                        return false;
+                    }
+                    Dashboard.showLoadingMsg();
+                    ApiClient.getPluginConfiguration(pluginId).then(function (config) {
+                        config.SourceLibraryIds = sources;
+                        config.AirDateFrom = page.querySelector('#AirDateFrom').value;
+                        config.AirDateTo = page.querySelector('#AirDateTo').value;
+                        config.MissingDateFallback = page.querySelector('#MissingDateFallback').value;
+                        config.OnePerSeries = page.querySelector('#OnePerSeries').checked;
+                        config.MaxEpisodes = parseInt(page.querySelector('#MaxEpisodes').value, 10) || 0;
+                        config.CommercialsLibraryId = page.querySelector('#CommercialsLibraryId').value;
+                        config.CommercialsMin = min;
+                        config.CommercialsMax = max;
+                        config.AvoidRepeatingCommercials = page.querySelector('#AvoidRepeatingCommercials').checked;
+                        config.PlaylistName = page.querySelector('#PlaylistName').value;
+                        config.PlaylistOwnerUserId = page.querySelector('#PlaylistOwnerUserId').value;
+                        return ApiClient.updatePluginConfiguration(pluginId, config);
+                    }).then(function (result) {
+                        Dashboard.processPluginConfigurationUpdateResult(result);
+                    });
+                    return false;
+                });
+            })();
+        </script>
+    </div>
+</body>
+</html>

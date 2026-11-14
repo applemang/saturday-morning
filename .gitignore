@@ -1,0 +1,23 @@
+# .NET
+bin/
+obj/
+*.user
+TestResults/
+coverage/
+artifacts/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local tooling
+.jeltz
+.integration/
+*.bak
+it-runs/

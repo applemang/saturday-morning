@@ -1,0 +1,47 @@
+[project]
+name = "sm-commercials"
+version = "1.0.0"
+description = "Builds the Saturday Morning commercials library as .strm files pointing at the Internet Archive."
+requires-python = ">=3.11"
+license = { text = "GPL-3.0-or-later" }
+dependencies = []
+
+[project.optional-dependencies]
+dev = ["pytest", "pytest-cov", "ruff", "mypy"]
+
+[project.scripts]
+sm-commercials = "sm_commercials.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["builder"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["builder", "tests/python", "tests/integration"]
+extend-exclude = [".jeltz"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S", "N", "D", "ANN", "SIM", "RUF"]
+ignore = ["D203", "D213"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "D", "ANN"]
+"tests/integration/**" = ["S101", "D", "ANN", "S603", "S607", "S310"]
+
+[tool.mypy]
+strict = true
+files = ["builder", "tests/python", "tests/integration"]
+mypy_path = "builder"
+
+[tool.pytest.ini_options]
+testpaths = ["tests/python"]
+pythonpath = ["builder"]
+addopts = "--cov=sm_commercials --cov=sm_release --cov-branch --cov-report=term-missing"
+
+[tool.ruff.lint.isort]
+known-first-party = ["sm_commercials", "sm_release"]

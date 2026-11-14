@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*.*.*.*"]
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    env:
+      DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+      DOTNET_NOLOGO: "1"
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          fetch-depth: 0
+      - uses: actions/setup-dotnet@0f4a354dd5547a28c70b7853dbd95d5b67886e73 # v6.1.0
+        with:
+          global-json-file: global.json
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
+      - name: Check tag matches the version and is on main
+        run: |
+          git checkout --quiet "$GITHUB_REF_NAME"
+          version="$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' Directory.Build.props)"
+          test "v$version" = "$GITHUB_REF_NAME" || { echo "tag $GITHUB_REF_NAME != v$version" >&2; exit 1; }
+          git merge-base --is-ancestor "$GITHUB_REF_NAME" origin/main || { echo "tag is not on main" >&2; exit 1; }
+          echo "VERSION=$version" >>"$GITHUB_ENV"
+      - name: Install Python tooling
+        run: |
+          python -m venv .venv
+          .venv/bin/pip install -r requirements-dev.txt
+      - name: make verify
+        run: make verify
+      - name: Package
+        run: |
+          notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          scripts/package.sh "${notes:-Release $VERSION}"
+      - name: Publish GitHub release
+        run: |
+          zip="artifacts/saturday-morning_${VERSION}.zip"
+          sha256sum "$zip" | cut -d' ' -f1 >"$zip.sha256"
+          gh release create "$GITHUB_REF_NAME" "$zip" "$zip.md5" "$zip.sha256" \
+            --title "Saturday Morning $VERSION" --notes "md5 $(cat "$zip.md5") / sha256 $(cat "$zip.sha256")" \
+            --verify-tag
+      - name: Add the release to manifest.json on main
+        run: |
+          git checkout --quiet main
+          zip="artifacts/saturday-morning_${VERSION}.zip"
+          notes="$(git tag -l --format='%(contents)' "$GITHUB_REF_NAME")"
+          PYTHONPATH=builder .venv/bin/python -m sm_release.manifest manifest \
+            --build build.json --version "$VERSION" --target-abi 12.1.0.0 \
+            --changelog "${notes:-Release $VERSION}" --zip "$zip" \
+            --source-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/saturday-morning_${VERSION}.zip" \
+            --manifest manifest.json
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add manifest.json
+          git commit -m "chore: publish ${VERSION} to the plugin manifest"
+          git push origin main

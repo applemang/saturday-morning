@@ -1,0 +1,8 @@
+{
+  "guid": "3108dfcc-d642-4726-9ea3-d4b10ab9461b",
+  "name": "Saturday Morning",
+  "overview": "Saturday morning cartoons with vintage commercials.",
+  "description": "Builds a weekly playlist of shuffled episodes from a chosen air-date range, one per series, with random vintage commercials (Internet Archive .strm files) between episodes.",
+  "owner": "applemang",
+  "category": "General"
+}
