@@ -207,7 +207,7 @@ delete them.
 | Sync fails: "not found (no files listed)" | The identifier is wrong. Copy it from the item's archive.org address. |
 | Sync fails: "has no matching video files" | Your include/exclude patterns removed every video of that item. |
 | Sync fails: "must have exactly one folder" | Give the commercials library a single folder. |
-| Sync fails with an access error | Jellyfin can't write to the commercials folder (read-only mount or permissions). |
+| Sync fails: "Read-only file system" or an access error | Jellyfin can't write to the commercials folder. Common on Docker when the whole media tree is mounted read-only (`/media:ro`): give the commercials folder its own read-write mount, e.g. `/srv/jellyfin-commercials:/media/Commercials`, listed after the read-only one. Nothing in the folder was changed. |
 | Fewer episodes than expected | One per series is on (by design), the series checklist excludes them, or the playlist owner can't see some libraries. |
 | Warning "commercials repeat" | More commercials needed than the library holds. Add items or lower the per-break counts. |
 | A commercial won't play on a client | It streams directly from archive.org. Check that the client can reach archive.org. A few archive items have no MP4 version, and those need server transcoding. |
