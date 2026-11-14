@@ -1,1 +1,20 @@
-[]
+[
+  {
+    "versions": [
+      {
+        "version": "1.0.0.0",
+        "changelog": "First release: weekly Saturday Morning playlist with archive.org commercials (Jellyfin 12.1+).",
+        "targetAbi": "12.1.0.0",
+        "sourceUrl": "https://github.com/applemang/saturday-morning/releases/download/v1.0.0.0/saturday-morning_1.0.0.0.zip",
+        "checksum": "ea3bc8a2cc59568aae7644c791b344f4",
+        "timestamp": "2026-11-14T09:58:07Z"
+      }
+    ],
+    "guid": "3108dfcc-d642-4726-9ea3-d4b10ab9461b",
+    "name": "Saturday Morning",
+    "description": "Builds a weekly playlist of shuffled episodes from a chosen air-date range, one per series, with random vintage commercials (Internet Archive .strm files) between episodes.",
+    "overview": "Saturday morning cartoons with vintage commercials.",
+    "owner": "applemang",
+    "category": "General"
+  }
+]
