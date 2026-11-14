@@ -163,6 +163,8 @@ curl -fLO https://repo.jellyfin.org/files/ffmpeg/linux/latest-7.x/arm64/jellyfin
 tar xJf jellyfin_12.1-arm64.tar.xz && mkdir ffmpeg && tar xJf jellyfin-ffmpeg_*.tar.xz -C ffmpeg
 ```
 
+`SM_IT_MANIFEST_URL=<manifest url> make integration` installs from a published
+manifest instead of a local build.
 `SM_IT_PASSWORD=<pick one> make demo` keeps that server running after the
 tests so you can play the playlist in Jellyfin Web (tunnel port 18096).
 

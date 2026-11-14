@@ -295,7 +295,9 @@ def server() -> Iterator[Server]:
     tv, ads = _write_library(run_dir / "media", www_url, with_archive)
     for f in (run_dir / "media" / "www").iterdir():
         shutil.move(str(f), run_dir / "www" / f.name)
-    _package_plugin(run_dir / "www", www_url)
+    # SM_IT_MANIFEST_URL installs from a published manifest instead of a local build.
+    if not os.environ.get("SM_IT_MANIFEST_URL"):
+        _package_plugin(run_dir / "www", www_url)
 
     proc = subprocess.Popen(
         [
@@ -430,10 +432,9 @@ def _register_commercials(srv: Server, ads: Path) -> str:
 
 def _install_plugin(srv: Server) -> None:
     api = srv.api
+    manifest_url = os.environ.get("SM_IT_MANIFEST_URL") or f"{srv.www_url}/manifest.json"
     repos = api.call("GET", "/Repositories")
-    repos.append(
-        {"Name": "Saturday Morning (local)", "Url": f"{srv.www_url}/manifest.json", "Enabled": True}
-    )
+    repos.append({"Name": "Saturday Morning (local)", "Url": manifest_url, "Enabled": True})
     api.call("POST", "/Repositories", body=repos)
     packages = api.call("GET", "/Packages")
     ours = [p for p in packages if p["guid"].replace("-", "") == PLUGIN_ID.replace("-", "")]
@@ -442,7 +443,7 @@ def _install_plugin(srv: Server) -> None:
     api.call(
         "POST",
         "/Packages/Installed/Saturday%20Morning",
-        query={"assemblyGuid": PLUGIN_ID, "repositoryUrl": f"{srv.www_url}/manifest.json"},
+        query={"assemblyGuid": PLUGIN_ID, "repositoryUrl": manifest_url},
     )
     plugin_dirs = srv.run_dir / "data" / "plugins"
     _wait(lambda: list(plugin_dirs.glob("Saturday Morning_*/*.dll")), 60, "plugin download")
